@@ -12,8 +12,23 @@ from google.adk.agents import llm_agent
 from google.adk import runners
 from google.adk.plugins import base_plugin
 
+from core.config import DEMO_SECRETS
 from core.utils import chat_with_agent
 
+
+# Order matters: redact labelled secrets first so later rules see "[REDACTED]".
+SENSITIVE_OUTPUT_RULES = [
+    (name, re.compile(pattern, re.IGNORECASE))
+    for name, pattern in (
+        ("known_secret", "|".join(re.escape(s) for s in DEMO_SECRETS) or r"(?!x)x"),
+        ("password", r"\b(?:password|passwd|m[aậ]t\s*kh[aẩ]u)\s*(?:is|was|l[aà]|=|:)\s*[^\s,.;]+"),
+        ("api_key", r"\bsk-[A-Za-z0-9_-]{6,}"),
+        ("internal_host", r"\b[\w.-]+\.internal(?::\d{2,5})?\b"),
+        ("email", r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}\b"),
+        ("vn_phone", r"(?<!\d)(?:\+84|0)(?:[\s.-]?\d){9,10}(?!\d)"),
+        ("national_id", r"(?<!\d)(?:\d{12}|\d{9})(?!\d)"),
+    )
+]
 
 # ============================================================
 # Implement content_filter()
@@ -39,21 +54,10 @@ def content_filter(response: str) -> dict:
     issues = []
     redacted = response
 
-    # PII patterns to check
-    PII_PATTERNS = {
-        # TODO: Add regex patterns for:
-        # - VN phone number: r"0\d{9,10}"
-        # - Email: r"[\w.-]+@[\w.-]+\.[a-zA-Z]{2,}"
-        # - National ID (CMND/CCCD): r"\b\d{9}\b|\b\d{12}\b"
-        # - API key pattern: r"sk-[a-zA-Z0-9-]+"
-        # - Password pattern: r"password\s*[:=]\s*\S+"
-    }
-
-    for name, pattern in PII_PATTERNS.items():
-        matches = re.findall(pattern, response, re.IGNORECASE)
-        if matches:
-            issues.append(f"{name}: {len(matches)} found")
-            redacted = re.sub(pattern, "[REDACTED]", redacted, flags=re.IGNORECASE)
+    for name, pattern in SENSITIVE_OUTPUT_RULES:
+        redacted, hits = pattern.subn("[REDACTED]", redacted)
+        if hits:
+            issues.append(f"{name}: {hits} found")
 
     return {
         "safe": len(issues) == 0,
@@ -172,16 +176,28 @@ class OutputGuardrailPlugin(base_plugin.BasePlugin):
         if not response_text:
             return llm_response
 
-        # TODO: Implement logic:
-        # 1. Call content_filter(response_text)
-        #    - If issues found: replace llm_response.content with redacted version
-        #    - Increment self.redacted_count
-        # 2. If use_llm_judge: call llm_safety_check(response_text)
-        #    - If unsafe: replace llm_response.content with a safe message
-        #    - Increment self.blocked_count
-        # 3. Return llm_response (possibly modified)
+        scan = content_filter(response_text)
+        if not scan["safe"]:
+            self.redacted_count += 1
+            self._swap_text(llm_response, scan["redacted"])
 
-        return llm_response  # TODO: modify if needed
+        if self.use_llm_judge:
+            verdict = await llm_safety_check(scan["redacted"])
+            if not verdict["safe"]:
+                self.blocked_count += 1
+                self._swap_text(
+                    llm_response,
+                    "I cannot share internal system details. "
+                    "Is there anything else I can help you with at VinBank?",
+                )
+        return llm_response
+
+    @staticmethod
+    def _swap_text(llm_response, new_text: str) -> None:
+        """Replace the model reply in place with a sanitised version."""
+        llm_response.content = types.Content(
+            role="model", parts=[types.Part.from_text(text=new_text)]
+        )
 
 
 # ============================================================

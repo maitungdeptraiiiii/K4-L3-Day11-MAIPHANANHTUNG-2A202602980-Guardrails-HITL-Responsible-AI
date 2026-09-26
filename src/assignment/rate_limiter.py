@@ -37,13 +37,19 @@ class RateLimitPlugin(base_plugin.BasePlugin):
         now = time.time()
         window = self.user_windows[user_id]
 
-        # TODO: Implement sliding window:
-        # 1. Pop timestamps older than (now - window_seconds) from the left
-        # 2. If len(window) >= max_requests:
-        #       wait = window_seconds - (now - window[0])
-        #       self.blocked_count += 1
-        #       return self._block_response(
-        #           f"Rate limit exceeded. Try again in {wait:.0f}s."
-        #       )
-        # 3. Else: append now, return None
-        raise NotImplementedError("Implement RateLimitPlugin.on_user_message_callback")
+        self._evict_expired(window, now)
+        if len(window) < self.max_requests:
+            window.append(now)
+            return None
+
+        retry_after = max(0.0, window[0] + self.window_seconds - now)
+        self.blocked_count += 1
+        return self._block_response(
+            f"Rate limit exceeded. Try again in {retry_after:.0f}s."
+        )
+
+    def _evict_expired(self, window: deque, now: float) -> None:
+        """Drop timestamps that have slid out of the current window."""
+        horizon = now - self.window_seconds
+        while window and window[0] <= horizon:
+            window.popleft()

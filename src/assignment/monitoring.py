@@ -42,16 +42,41 @@ class MonitoringAlert:
     judge_fails: int = 0
 
     def check_metrics(self) -> list[Alert]:
-        """TODO: compute rates, append Alert objects when thresholds exceeded."""
-        raise NotImplementedError("Implement MonitoringAlert.check_metrics")
+        """Compare current rates to thresholds; return alerts raised by this call.
+
+        An alert for a metric is raised once — repeated checks don't duplicate it.
+        """
+        current = self.snapshot()
+        watched = [
+            ("block_rate", current["block_rate"], self.block_rate_threshold),
+            ("rate_limit_hits", current["rate_limit_hits"], self.rate_limit_hit_threshold),
+            ("judge_fail_rate", current["judge_fail_rate"], self.judge_fail_rate_threshold),
+        ]
+        already_raised = {a.metric for a in self.alerts}
+        fresh: list[Alert] = []
+        for metric, value, limit in watched:
+            if value <= limit or metric in already_raised:
+                continue
+            fresh.append(
+                Alert(
+                    metric=metric,
+                    value=float(value),
+                    threshold=float(limit),
+                    message=f"ALERT: {metric}={value:.2f} is above threshold {limit}",
+                )
+            )
+        self.alerts.extend(fresh)
+        for alert in fresh:
+            print(f"[monitor] {alert.message}")
+        return fresh
 
     def export_json(self, filepath: str | None = None):
-        """TODO: write metrics + alerts to JSON under repo-root ``outputs/`` by default.
-        Use ``filepath or default_metrics_path()`` so running from ``src/`` does not
-        create ``src/outputs/``.
-        """
-        _ = filepath or default_metrics_path()
-        raise NotImplementedError("Implement MonitoringAlert.export_json")
+        """Write metrics + alerts to JSON under repo-root ``outputs/`` by default."""
+        target = Path(filepath or default_metrics_path())
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("w", encoding="utf-8") as fh:
+            json.dump(self.snapshot(), fh, ensure_ascii=False, indent=2)
+        return str(target)
 
     def snapshot(self) -> dict:
         block_rate = (

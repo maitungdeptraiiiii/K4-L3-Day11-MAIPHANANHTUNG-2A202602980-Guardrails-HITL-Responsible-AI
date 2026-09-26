@@ -1,5 +1,29 @@
 # Day 11 — Controlled Agent Security (2026)
 
+## Thông tin nộp bài
+
+| | |
+|---|---|
+| **Họ tên** | Mai Phan Anh Tung |
+| **MSSV** | 2A202602980 |
+| **Blue** | OpenRouter `liquid/lfm-2.5-2.6b` |
+| **Red / Red Advance** | OpenAI `gpt-4o-mini` |
+
+**Cách chạy (từ gốc repo, sau khi Activate `.venv` và điền `.env`):**
+
+```bash
+python src/main.py --part 2   # CP2 — guardrails (in terminal)
+python src/main.py --part 3   # CP3 — outputs/results.json, audit_log.json, metrics.json
+python src/main.py --part 4   # CP4 — outputs/attack_results.json (+ unsafe_/guards_ chi tiết)
+pytest tests/smoke tests/public -q
+python scripts/grade.py --submission-dir . --out outputs/grade_report.json
+```
+
+**Kết quả:** CP3 — 0/6 safe bị chặn nhầm, 9/9 attack bị chặn, rate limit 16 gửi / 10 qua / 6 chặn.
+CP4 — Red leak 4/5 prompt; Red Advance 0/5 (chặn ở input guardrail).
+
+---
+
 > 👤 **Hình thức:** bài tập **cá nhân** (1 người / 1 MSSV).  
 > 🎯 **Mục tiêu:** xây **Blue** (phòng thủ), rồi red-team **Red** + **Red Advance**.  
 > ✅ Làm theo **Checkpoint 1 → 5** trong [`CHECKPOINTS.md`](CHECKPOINTS.md) · nộp theo [`SUBMISSION.md`](SUBMISSION.md).

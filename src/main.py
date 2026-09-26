@@ -134,10 +134,13 @@ async def part4_attacks():
 
 
 async def main(parts=None):
-    setup_api_key()
-
     if parts is None:
         parts = [2, 3, 4]  # Core: CP2 → CP3 → CP4
+
+    # CP2/CP3 run offline (CP3 uses Blue only if OPENROUTER_API_KEY exists);
+    # only the red-team step must have live keys, so only it may prompt.
+    if 4 in parts:
+        setup_api_key()
 
     for part in parts:
         if part == 2:
